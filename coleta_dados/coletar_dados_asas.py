@@ -7,8 +7,8 @@ import csv
 import os
 
 # --- CONFIGURAções ---
-VIDEO_PATH = 'videos/asas_de_super_heroi.mp4'
-OUTPUT_CSV_PATH = 'coord_videos/asas_de_super_heroi.csv'
+VIDEO_PATH = '../videos/asas_de_super_heroi.mp4'
+OUTPUT_CSV_PATH = '../coord_videos/asas_de_super_heroi.csv'
 # ---------------------
 
 mp_drawing = mp.solutions.drawing_utils

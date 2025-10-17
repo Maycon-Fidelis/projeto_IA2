@@ -1,19 +1,22 @@
-# arquivo: treinar_modelo.py
+# arquivo: treinar_modelo.py (com relatório de classificação)
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
+# (# <<< MUDANÇA 1: IMPORTA A FUNÇÃO classification_report >>>)
+from sklearn.metrics import accuracy_score, classification_report 
 import pickle
+import os
 
-# O INPUT_CSV_PATH deve apontar para o arquivo gerado pelo coletor de dados.
-# O OUTPUT_MODEL_PATH define o nome do arquivo do modelo treinado (.pkl) que será gerado.
 # --- CONFIGURAÇÕES ---
 INPUT_CSV_PATH = '../coord_videos/alcancar_as_estrelas.csv'
 OUTPUT_MODEL_PATH = '../modelos/alcancar_as_estrelas.pkl'
 # ---------------------
+
+# Garante que a pasta 'modelos' exista antes de salvar
+os.makedirs(os.path.dirname(OUTPUT_MODEL_PATH), exist_ok=True)
 
 df = pd.read_csv(INPUT_CSV_PATH)
 
@@ -34,9 +37,14 @@ model.fit(X_train, y_train)
 # Avalia o modelo
 y_pred = model.predict(X_test)
 accuracy = accuracy_score(y_test, y_pred)
-print(f"Acurácia do modelo nos dados de teste: {accuracy * 100:.2f}%")
+print(f"🎯 Acurácia Geral do Modelo: {accuracy * 100:.2f}%")
 
+# (# <<< MUDANÇA 2: GERA E EXIBE O RELATÓRIO DE CLASSIFICAÇÃO >>>)
+print("\n📊 Relatório de Classificação Detalhado:")
+print(classification_report(y_test, y_pred))
+
+# Salva o modelo treinado
 with open(OUTPUT_MODEL_PATH, 'wb') as f:
     pickle.dump(model, f)
 
-print(f"Modelo salvo com sucesso em '{OUTPUT_MODEL_PATH}'")
+print(f"\n🚀 Modelo salvo com sucesso em '{OUTPUT_MODEL_PATH}'")

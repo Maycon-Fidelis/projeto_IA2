@@ -1,7 +1,6 @@
-mediapipe
 opencv-python
+mediapipe
 numpy
-joblib
-numpy
-scikit-learn
 pandas
+scikit-learn
+Pillow

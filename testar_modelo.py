@@ -9,21 +9,23 @@ import os
 import random
 
 # --- CONFIGURAÇÃO CENTRAL DE EXERCÍCIOS ---
+# (# <<< MUDANÇA 1: CORRIGE A LÓGICA DO EXERCÍCIO "ASAS" >>>)
+# A sequência completa para contar uma repetição.
 EXERCISES = {
     "estrelas": {
         "name": "Alcançar as Estrelas",
         "model_path": "modelos/alcancar_as_estrelas.pkl",
-        "logic": ['up', 'down']
+        "logic": ['down', 'up']
     },
     "asas": {
         "name": "Asas de Super-Herói",
         "model_path": "modelos/asas_de_super_heroi.pkl",
-        "logic": ['up', 'down']
+        "logic": ['middle', 'up', 'middle']
     },
     "parede": {
         "name": "Empurrar Parede",
         "model_path": "modelos/empurrar_parede.pkl",
-        "logic": ['push', 'down']
+        "logic": ['down', 'push']
     }
 }
 # -------------------------------------------
@@ -32,48 +34,42 @@ mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
 class PoseApp(tk.Tk):
+    # ... (código da classe principal permanece o mesmo) ...
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.title("Missões do Herói IA")
         self.geometry("1280x800")
-
         container = tk.Frame(self)
         container.pack(side="top", fill="both", expand=True)
         container.grid_rowconfigure(0, weight=1)
         container.grid_columnconfigure(0, weight=1)
-
         self.frames = {}
         self.previous_frame = None
         for F in (LevelSelectionFrame, MissionFrame, MissionCompleteFrame):
             frame = F(container, self)
             self.frames[F] = frame
             frame.grid(row=0, column=0, sticky="nsew")
-
         self.show_frame(LevelSelectionFrame)
 
     def show_frame(self, cont, data=None):
         frame = self.frames[cont]
         if self.previous_frame and hasattr(self.previous_frame, 'stop_mission'):
             self.previous_frame.stop_mission()
-        
         if cont == MissionFrame and data:
             frame.configure_mission(data)
             frame.start_mission()
-        
         if hasattr(frame, 'set_results') and data:
             frame.set_results(data)
-
         frame.tkraise()
         self.previous_frame = frame
 
 class LevelSelectionFrame(tk.Frame):
+    # ... (código da seleção de fases permanece o mesmo) ...
     def __init__(self, parent, controller):
         super().__init__(parent, bg='#ecf0f1')
         label = tk.Label(self, text="Selecione a Missão", font=('Nunito', 24, 'bold'), bg='#ecf0f1', fg='#3498db')
         label.pack(pady=40, padx=10)
-
-        button_font = font.Font(family='Nunito', size=14)
-        
+        button_font = font.Font(family='Nunito', size=14, weight='bold')
         for key, exercise_data in EXERCISES.items():
             btn = tk.Button(self, text=exercise_data['name'],
                             font=button_font, bg='#f1c40f', fg='#2c3e50',
@@ -81,7 +77,6 @@ class LevelSelectionFrame(tk.Frame):
             btn.pack(pady=15, padx=20, ipadx=10, ipady=10)
 
 class MissionFrame(tk.Frame):
-    # <<< MUDANÇA 1: AJUSTA A META DE REPETIÇÕES E ESTRELAS >>>
     MISSION_GOAL = 5
     STAR_THRESHOLDS = (1, 3, 5)
 
@@ -90,8 +85,8 @@ class MissionFrame(tk.Frame):
         self.controller = controller
         
         self.model = None
-        self.action_stage = ""
-        self.rest_stage = ""
+        self.exercise_logic = []
+        self.logic_index = 0 # O "dedo" na nossa checklist de movimento
         self.stage = ""
         
         self.idle_frames = self.load_animation_frames('assets/idle')
@@ -100,7 +95,6 @@ class MissionFrame(tk.Frame):
         self.star_filled_img = self.load_ui_image('assets/ui/star_filled.png', (64, 64))
         
         self.is_mission_running = False
-        # <<< MUDANÇA 2: DEIXA O MEDIAPIPE MAIS SENSÍVEL >>>
         self.pose_processor = mp_pose.Pose(min_detection_confidence=0.4, min_tracking_confidence=0.4, model_complexity=0)
 
         # --- Layout (sem alterações) ---
@@ -137,11 +131,11 @@ class MissionFrame(tk.Frame):
         try:
             with open(exercise_data['model_path'], "rb") as f:
                 self.model = pickle.load(f)
-            self.action_stage = exercise_data['logic'][0]
-            self.rest_stage = exercise_data['logic'][1]
-            print(f"Modelo '{exercise_data['name']}' carregado. Ação: '{self.action_stage}', Descanso: '{self.rest_stage}'")
+            self.exercise_logic = exercise_data['logic']
+            print(f"Modelo '{exercise_data['name']}' carregado. Lógica: {self.exercise_logic}")
         except Exception as e:
             self.model = None
+            self.exercise_logic = []
             print(f"ERRO ao carregar o modelo '{exercise_data['name']}': {e}")
             self.feedback_label.config(text=f"Erro ao carregar o modelo!")
 
@@ -149,7 +143,8 @@ class MissionFrame(tk.Frame):
         if self.is_mission_running or self.model is None: return
         self.is_mission_running = True
         self.counter = 0
-        self.stage = self.rest_stage
+        self.logic_index = 0 # Começa no primeiro passo da checklist
+        self.stage = "..." 
         self.cap = cv2.VideoCapture(0)
         self.reset_ui()
         self.update_frame()
@@ -173,15 +168,20 @@ class MissionFrame(tk.Frame):
             X = np.array(row).reshape(1, -1)
             pose_class = self.model.predict(X)[0]
             
-            # (# <<< MUDANÇA 3: LÓGICA DE CONTAGEM CORRIGIDA E SENSÍVEL >>>)
-            if pose_class == self.action_stage and self.stage == self.rest_stage:
-                self.stage = self.action_stage
-                self.counter += 1
-                self.on_rep_success()
-            # Verifica a transição de volta para o descanso para dar feedback
-            elif pose_class == self.rest_stage and self.stage == self.action_stage:
-                self.stage = self.rest_stage
-                self.update_feedback_text("Ótimo! Prepare-se para a próxima.")
+            # (# <<< MUDANÇA 3: NOVA LÓGICA DE CONTAGEM BASEADA EM SEQUÊNCIA >>>)
+            expected_stage = self.exercise_logic[self.logic_index]
+            
+            # Só avança na sequência se a pose detectada for a esperada
+            if pose_class == expected_stage:
+                self.stage = pose_class
+                self.logic_index += 1 # Avança para o próximo passo da checklist
+                self.update_feedback_text(f"Correto! Próximo passo: {self.exercise_logic[self.logic_index % len(self.exercise_logic)]}")
+                
+                # Checa se a checklist (sequência) foi completada
+                if self.logic_index >= len(self.exercise_logic):
+                    self.logic_index = 0 # Reinicia a checklist para a próxima repetição
+                    self.counter += 1
+                    self.on_rep_success()
 
             mp_drawing.draw_landmarks(image_bgr, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
         
@@ -190,6 +190,7 @@ class MissionFrame(tk.Frame):
         self.video_label.image = img_tk
         self.after(10, self.update_frame)
         
+    # O resto das funções permanece o mesmo...
     def load_ui_image(self, path, size):
         try: return ImageTk.PhotoImage(Image.open(path).resize(size, Image.Resampling.LANCZOS))
         except: return None
@@ -217,7 +218,7 @@ class MissionFrame(tk.Frame):
         self.goal_label.config(text=f"Meta: {self.counter} / {self.MISSION_GOAL}")
         if self.counter < self.MISSION_GOAL:
             progress_value = self.counter - 0.1
-            self.update_feedback_text(random.choice(["Continue assim!", "Mantenha o ritmo!", "Falta pouco!"]))
+            self.update_feedback_text("Repetição Completa! Ótimo!")
         else:
             progress_value = self.MISSION_GOAL
             self.update_feedback_text("Você conseguiu!")
