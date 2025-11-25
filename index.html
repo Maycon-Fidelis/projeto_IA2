@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Missões do Herói IA - Treinamento de Pose</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- MediaPipe Pose CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675345712/pose.js" crossorigin="anonymous"></script>
+    <style>
+        /* Estilo customizado para o progresso, simulando o ttk.Progressbar */
+        .progress-bar-fill {
+            transition: width 0.3s ease;
+            background-color: #2ecc71; /* Verde */
+            border-radius: 9999px;
+            height: 100%;
+        }
+        /* Garantir que o canvas ocupe o espaço */
+        #output-canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background-color: #1f2937; /* Cinza escuro/preto */
+        }
+        /* Estilo para a bolha de fala */
+        .speech-bubble {
+            position: relative;
+            background: #fff;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .speech-bubble:after {
+            content: '';
+            position: absolute;
+            bottom: -15px;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border: 8px solid transparent;
+            border-top-color: #fff;
+            border-bottom: 0;
+            margin-left: -8px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans min-h-screen flex items-center justify-center p-4">
+
+    <!-- Container Principal do App -->
+    <div id="app-container" class="w-full max-w-6xl bg-gray-800 rounded-xl shadow-2xl p-6 transition-all duration-500">
+        <!-- Telas do App -->
+        <div id="screens" class="relative">
+            
+            <!-- 1. Tela de Seleção de Nível -->
+            <div id="selection-screen" class="screen flex flex-col items-center">
+                <h1 class="text-4xl font-extrabold text-blue-400 mb-10">Selecione a Missão do Herói IA</h1>
+                <div id="mission-buttons" class="space-y-6 w-full max-w-md">
+                    <!-- Botões serão inseridos via JS -->
+                </div>
+            </div>
+
+            <!-- 2. Tela da Missão (Jogo) -->
+            <div id="mission-screen" class="screen hidden">
+                <div class="flex flex-col lg:flex-row space-y-6 lg:space-y-0 lg:space-x-6 h-full">
+                    
+                    <!-- Painel de Vídeo (Esquerda) -->
+                    <div class="flex-1 bg-gray-900 rounded-lg shadow-inner flex items-center justify-center p-2 min-h-[400px]">
+                        <canvas id="output-canvas" class="rounded-lg shadow-lg"></canvas>
+                        <div id="camera-loading" class="text-xl text-yellow-500">
+                            Aguardando permissão da câmera...
+                        </div>
+                        <video id="input-video" class="hidden"></video>
+                    </div>
+
+                    <!-- Painel do Jogo (Direita) -->
+                    <div class="w-full lg:w-96 bg-gray-700 rounded-lg p-6 flex flex-col shadow-xl">
+                        <h2 id="mission-title" class="text-3xl font-bold text-yellow-400 mb-4 text-center"></h2>
+                        
+                        <!-- Progresso -->
+                        <div class="mb-6">
+                            <p id="goal-label" class="text-lg font-semibold text-center mb-2">Meta: 0 / 5</p>
+                            <div class="w-full h-8 bg-gray-500 rounded-full overflow-hidden">
+                                <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Feedback -->
+                        <p id="feedback-label" class="text-md italic text-gray-200 text-center min-h-[40px] mb-6"></p>
+
+                        <!-- Sistema de Estrelas -->
+                        <div id="star-frame" class="flex justify-center space-x-4 mb-8">
+                            <span class="text-5xl" id="star-1">⭐</span>
+                            <span class="text-5xl" id="star-2">⭐</span>
+                            <span class="text-5xl" id="star-3">⭐</span>
+                        </div>
+                        
+                        <!-- Herói Animado e Bolha de Fala (Simulação de Animação) -->
+                        <div class="flex-grow flex flex-col items-center justify-end p-4">
+                            <div id="speech-bubble" class="speech-bubble hidden"></div>
+                            <div id="hero-label" class="text-8xl p-4 transform transition duration-500 ease-in-out">
+                                🦸
+                            </div>
+                        </div>
+
+                        <button onclick="app.stopMission(); app.showScreen('selection-screen')" class="mt-6 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 shadow-md">
+                            Encerrar Missão
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Tela de Missão Completa -->
+            <div id="complete-screen" class="screen hidden flex flex-col items-center text-center py-20">
+                <h1 class="text-5xl font-extrabold text-green-400 mb-8">MISSÃO CONCLUÍDA!</h1>
+                <p class="text-2xl text-gray-300 mb-10">Resultado da Missão:</p>
+                <div id="result-stars" class="flex justify-center space-x-6 mb-12">
+                    <!-- Estrelas de resultado serão atualizadas aqui -->
+                </div>
+                <button onclick="app.showScreen('selection-screen')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-xl text-lg transition duration-300 shadow-lg">
+                    Voltar ao Menu
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Variável global do aplicativo
+        let app;
+
+        // --- Funções de Ajuda Geométrica ---
+        
+        /**
+         * Calcula o ângulo entre três pontos (A, B, C) com B sendo o vértice.
+         * @param {Object} a - Ponto A (landmark).
+         * @param {Object} b - Ponto B (vértice/joint).
+         * @param {Object} c - Ponto C (landmark).
+         * @returns {number} Ângulo em graus.
+         */
+        function calculateAngle(a, b, c) {
+            const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+            let angle = Math.abs(radians * 180.0 / Math.PI);
+            if (angle > 180.0) {
+                angle = 360 - angle;
+            }
+            return angle;
+        }
+
+        /**
+         * Verifica se um landmark está acima ou abaixo de outro.
+         * Assume que Y=0 é o topo da tela e Y=1 é o fundo.
+         * @param {Object} landmark1 - Landmark superior (ex: Pulso).
+         * @param {Object} landmark2 - Landmark inferior (ex: Ombro).
+         * @returns {boolean} True se landmark1 estiver acima (menor valor Y) do landmark2.
+         */
+        function isAbove(landmark1, landmark2) {
+            return landmark1.y < landmark2.y;
+        }
+
+        // --- Lógica de Classificação de Pose (HEURÍSTICAS) ---
+        
+        /**
+         * Classifica a pose atual com base nos ângulos e posições dos landmarks.
+         * @param {Array} landmarks - Array de landmarks do MediaPipe.
+         * @param {string} exerciseKey - Chave do exercício atual.
+         * @returns {string} Classe da pose ('up', 'down', 'middle', 'push') ou 'unknown'.
+         */
+        function classifyPose(landmarks, exerciseKey) {
+            if (!landmarks || landmarks.length === 0) return 'unknown';
+
+            // Pontos chave
+            const shoulderL = landmarks[11]; // Ombro esquerdo
+            const elbowL = landmarks[13];    // Cotovelo esquerdo
+            const wristL = landmarks[15];    // Pulso esquerdo
+            const hipL = landmarks[23];      // Quadril esquerdo
+            const shoulderR = landmarks[12]; // Ombro direito
+            const elbowR = landmarks[14];    // Cotovelo direito
+            const wristR = landmarks[16];    // Pulso direito
+            const hipR = landmarks[24];      // Quadril direito
+
+            // Ângulos
+            const elbowAngleL = calculateAngle(shoulderL, elbowL, wristL);
+            const shoulderAngleL = calculateAngle(hipL, shoulderL, elbowL);
+            const armAngleL = calculateAngle(hipL, shoulderL, wristL);
+
+            // Usa o braço esquerdo como primário, mas o direito como backup
+            const mainElbowAngle = elbowAngleL;
+            const mainShoulderAngle = shoulderAngleL;
+            const mainArmAngle = armAngleL;
+            
+            // Posição vertical do pulso em relação ao ombro
+            const wristAboveShoulderL = isAbove(wristL, shoulderL);
+
+            switch (exerciseKey) {
+                case "estrelas": // Reach the Stars: ['down', 'up']
+                    // down: Braços relaxados, abaixo do ombro.
+                    // up: Braços esticados para cima.
+                    if (wristAboveShoulderL && mainElbowAngle > 160) {
+                        return 'up'; // Braço esticado, acima da cabeça
+                    }
+                    // Considera 'down' se o pulso estiver abaixo do ombro e o cotovelo não estiver completamente dobrado
+                    if (!wristAboveShoulderL && wristL.y > hipL.y) {
+                        return 'down'; 
+                    }
+                    return 'middle'; // Posição intermediária
+
+                case "asas": // Superhero Wings: ['middle', 'up', 'middle']
+                    // middle: Braços em "T" ou ligeiramente abaixo.
+                    // up: Braços esticados para cima.
+                    if (wristAboveShoulderL && mainElbowAngle > 160) {
+                         return 'up'; // Braço esticado, acima da cabeça
+                    }
+                    // Braços abertos, mais para os lados (ângulo do quadril-ombro-pulso deve ser amplo)
+                    // Um bom 'middle' de asa é quando o ângulo do cotovelo é ~180 (reto) e o pulso não está acima do ombro
+                    if (mainElbowAngle > 160 && Math.abs(wristL.y - shoulderL.y) < 0.1) {
+                         return 'middle';
+                    }
+                    return 'down'; // Posição relaxada
+
+                case "parede": // Wall Push (Push-ups na parede): ['down', 'push']
+                    // down: Cotovelo flexionado (dobrado) - corpo perto da parede
+                    // push: Cotovelo esticado (reto) - corpo longe da parede
+                    if (mainElbowAngle < 100) {
+                        return 'down'; // Cotovelo dobrado
+                    }
+                    if (mainElbowAngle > 160) {
+                        return 'push'; // Cotovelo esticado
+                    }
+                    return 'unknown';
+                
+                default:
+                    return 'unknown';
+            }
+        }
+
+
+        // --- Classe Principal do Aplicativo ---
+
+        class HeroIAApp {
+            constructor() {
+                this.EXERCISES = {
+                    "estrelas": { "name": "Alcançar as Estrelas", "logic": ['down', 'up'] },
+                    "asas": { "name": "Asas de Super-Herói", "logic": ['middle', 'up', 'middle'] },
+                    "parede": { "name": "Empurrar Parede", "logic": ['down', 'push'] }
+                };
+                this.MISSION_GOAL = 5;
+                this.STAR_THRESHOLDS = [1, 3, 5];
+                
+                this.pose = new Pose({locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+                }});
+
+                this.pose.setOptions({
+                    modelComplexity: 0,
+                    smoothLandmarks: true,
+                    minDetectionConfidence: 0.4,
+                    minTrackingConfidence: 0.4
+                });
+
+                this.pose.onResults(this.onResults.bind(this));
+
+                // Estado da Missão
+                this.isMissionRunning = false;
+                this.exerciseKey = null;
+                this.exerciseLogic = [];
+                this.logicIndex = 0;
+                this.counter = 0;
+                this.stage = "";
+                
+                // Elementos do DOM
+                this.screens = {
+                    'selection-screen': document.getElementById('selection-screen'),
+                    'mission-screen': document.getElementById('mission-screen'),
+                    'complete-screen': document.getElementById('complete-screen')
+                };
+                this.videoElement = document.getElementById('input-video');
+                this.canvasElement = document.getElementById('output-canvas');
+                this.canvasCtx = this.canvasElement.getContext('2d');
+
+                // UI Elements
+                this.goalLabel = document.getElementById('goal-label');
+                this.progressBarFill = document.getElementById('progress-bar-fill');
+                this.feedbackLabel = document.getElementById('feedback-label');
+                this.starLabels = [
+                    document.getElementById('star-1'), 
+                    document.getElementById('star-2'), 
+                    document.getElementById('star-3')
+                ];
+                this.heroLabel = document.getElementById('hero-label');
+                this.speechBubble = document.getElementById('speech-bubble');
+                this.missionTitle = document.getElementById('mission-title');
+                this.cameraLoading = document.getElementById('camera-loading');
+
+                this.initSelectionScreen();
+            }
+
+            // --- Lógica de Telas ---
+
+            showScreen(screenId, data = null) {
+                Object.keys(this.screens).forEach(key => {
+                    this.screens[key].classList.add('hidden');
+                });
+                this.screens[screenId].classList.remove('hidden');
+
+                if (screenId === 'complete-screen' && data) {
+                    this.setResults(data);
+                }
+            }
+
+            initSelectionScreen() {
+                const buttonContainer = document.getElementById('mission-buttons');
+                buttonContainer.innerHTML = '';
+                
+                Object.entries(this.EXERCISES).forEach(([key, data]) => {
+                    const button = document.createElement('button');
+                    button.textContent = data.name;
+                    button.className = "w-full py-4 text-xl font-bold rounded-xl bg-yellow-500 text-gray-900 hover:bg-yellow-400 transition duration-300 shadow-lg transform hover:scale-[1.02]";
+                    button.onclick = () => this.configureAndStartMission(key, data);
+                    buttonContainer.appendChild(button);
+                });
+
+                this.showScreen('selection-screen');
+            }
+
+            configureAndStartMission(key, data) {
+                this.exerciseKey = key;
+                this.exerciseLogic = data.logic;
+                this.missionTitle.textContent = data.name;
+
+                this.resetUI();
+                this.showScreen('mission-screen');
+                this.startMission();
+            }
+
+            setResults(data) {
+                const starsEarned = data.stars;
+                const resultStarsDiv = document.getElementById('result-stars');
+                resultStarsDiv.innerHTML = '';
+
+                for (let i = 0; i < 3; i++) {
+                    const starSpan = document.createElement('span');
+                    starSpan.className = "text-6xl transition-transform duration-500 ease-out " + (i < starsEarned ? 'transform scale-100 text-yellow-500' : 'opacity-50 text-gray-500');
+                    starSpan.textContent = i < starsEarned ? '🌟' : '⭐';
+                    resultStarsDiv.appendChild(starSpan);
+                }
+            }
+
+            // --- Lógica de Câmera e MediaPipe ---
+
+            async startMission() {
+                if (this.isMissionRunning) return;
+                this.isMissionRunning = true;
+
+                // 1. Configurar stream da câmera
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    this.videoElement.srcObject = stream;
+                    this.cameraLoading.classList.add('hidden');
+                    this.canvasElement.classList.remove('hidden');
+
+                    await new Promise((resolve) => {
+                        this.videoElement.onloadedmetadata = () => {
+                            this.canvasElement.width = this.videoElement.videoWidth;
+                            this.canvasElement.height = this.videoElement.videoHeight;
+                            resolve();
+                        };
+                    });
+
+                    // 2. Iniciar o loop de detecção
+                    this.videoElement.play();
+                    this.updateFrame();
+                    this.animateHero();
+                    this.updateFeedbackText("Câmera conectada. Prepare-se!");
+
+                } catch (error) {
+                    console.error("Erro ao acessar a câmera: ", error);
+                    this.cameraLoading.textContent = "Erro: Câmera não acessível ou permissão negada.";
+                    this.isMissionRunning = false;
+                    this.stopMission();
+                    // Usar um modal customizado em vez de alert()
+                    this.showCustomAlert("Erro de Câmera", "Não foi possível acessar a câmera. Verifique as permissões e tente novamente.");
+                }
+            }
+
+            stopMission() {
+                if (!this.isMissionRunning) return;
+                this.isMissionRunning = false;
+                
+                const stream = this.videoElement.srcObject;
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                this.videoElement.srcObject = null;
+                this.cameraLoading.classList.remove('hidden');
+                this.canvasElement.classList.add('hidden');
+            }
+
+            // --- Loop Principal de Pose ---
+
+            async updateFrame() {
+                if (!this.isMissionRunning) return;
+
+                // Envia o frame para o MediaPipe
+                await this.pose.send({image: this.videoElement});
+
+                // Solicita o próximo frame
+                requestAnimationFrame(this.updateFrame.bind(this));
+            }
+
+            onResults(results) {
+                if (!this.isMissionRunning) return;
+
+                // 1. Desenhar Frame no Canvas
+                this.canvasCtx.save();
+                this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
+                
+                // Espelhar o vídeo para que o usuário se veja corretamente
+                this.canvasCtx.scale(-1, 1);
+                this.canvasCtx.translate(-this.canvasElement.width, 0);
+                this.canvasCtx.drawImage(results.image, 0, 0, this.canvasElement.width, this.canvasElement.height);
+                this.canvasCtx.restore();
+
+                // 2. Processar a Pose
+                if (results.poseLandmarks) {
+                    // Desenhar Landmarks e Conexões
+                    drawConnectors(this.canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#3498db', lineWidth: 4});
+                    drawLandmarks(this.canvasCtx, results.poseLandmarks, {color: '#f1c40f', lineWidth: 2});
+                    
+                    // Normalizar os landmarks para usar na lógica de pose
+                    const normalizedLandmarks = results.poseLandmarks;
+
+                    // 3. Classificar a Pose
+                    const poseClass = classifyPose(normalizedLandmarks, this.exerciseKey);
+
+                    // 4. Lógica de Contagem Sequencial (Checklist)
+                    const expectedStage = this.exerciseLogic[this.logicIndex];
+
+                    if (poseClass === expectedStage) {
+                        if (this.stage !== poseClass) { // Garante que só conta uma vez por transição
+                            this.stage = poseClass;
+                            this.logicIndex = (this.logicIndex + 1) % this.exerciseLogic.length; // Avança o índice
+                            this.updateFeedbackText(`Correto! Mantenha a pose: ${this.stage}`);
+
+                            // Checa se a sequência foi completada (índice 0 é o reinício da sequência)
+                            if (this.logicIndex === 0) {
+                                this.counter++;
+                                this.onRepSuccess();
+                                this.updateFeedbackText("Repetição Completa! Ótimo!");
+                            }
+                        }
+                    } else if (poseClass !== 'unknown' && this.stage === expectedStage) {
+                        // Se a pose está errada (e não é 'unknown'), mas estamos esperando a pose certa,
+                        // podemos dar um feedback de erro, mas sem resetar o logicIndex (para ser mais tolerante)
+                        // this.updateFeedbackText(`Tente voltar para: ${expectedStage}`);
+                    }
+                }
+            }
+
+            // --- Lógica do Jogo ---
+
+            resetUI() {
+                this.counter = 0;
+                this.logicIndex = 0;
+                this.stage = "";
+                this.goalLabel.textContent = `Meta: 0 / ${this.MISSION_GOAL}`;
+                this.progressBarFill.style.width = '0%';
+                this.updateFeedbackText("Prepare-se para começar a missão!");
+                this.starLabels.forEach(label => label.textContent = '⭐');
+                this.speechBubble.classList.add('hidden');
+                this.heroLabel.style.transform = 'scale(1)';
+            }
+
+            onRepSuccess() {
+                this.goalLabel.textContent = `Meta: ${this.counter} / ${this.MISSION_GOAL}`;
+                const percentage = (this.counter / this.MISSION_GOAL) * 100;
+                this.progressBarFill.style.width = `${Math.min(100, percentage)}%`;
+                
+                this.updateStars();
+                this.triggerHeroAction();
+
+                if (this.counter >= this.MISSION_GOAL) {
+                    setTimeout(() => this.missionComplete(), 1500);
+                }
+            }
+
+            updateStars() {
+                let starsEarned = 0;
+                this.STAR_THRESHOLDS.forEach((threshold, i) => {
+                    if (this.counter >= threshold) {
+                        this.starLabels[i].textContent = '🌟'; // Estrela preenchida
+                        starsEarned++;
+                    } else {
+                        this.starLabels[i].textContent = '⭐'; // Estrela vazia
+                    }
+                });
+                return starsEarned;
+            }
+
+            missionComplete() {
+                this.stopMission();
+                const stars = this.updateStars();
+                this.showScreen('complete-screen', { stars: stars });
+            }
+
+            triggerHeroAction() {
+                const motivationalPhrases = [
+                    "Graças a você, ajudei a fortalecer o mundo!", 
+                    "Sua energia é contagiante!", 
+                    "Juntos somos uma super-equipe!", 
+                    "Ótimo movimento! Senti o poder!"
+                ];
+
+                this.heroLabel.style.transform = 'scale(1.2) rotate(10deg)';
+                setTimeout(() => {
+                    this.heroLabel.style.transform = 'scale(1) rotate(0deg)';
+                }, 500);
+
+                this.speechBubble.textContent = motivationalPhrases[Math.floor(Math.random() * motivationalPhrases.length)];
+                this.speechBubble.classList.remove('hidden');
+                setTimeout(() => {
+                    this.speechBubble.classList.add('hidden');
+                }, 3500);
+            }
+
+            animateHero() {
+                if (!this.isMissionRunning) {
+                    this.heroLabel.textContent = '🦸'; // Ícone padrão
+                    return;
+                }
+                // Simulação de animação mudando o emoji
+                const heroEmojis = ['🦸', '✨', '⚡'];
+                const currentEmoji = this.heroLabel.textContent;
+                let nextIndex = (heroEmojis.indexOf(currentEmoji) + 1) % heroEmojis.length;
+                this.heroLabel.textContent = heroEmojis[nextIndex];
+
+                setTimeout(this.animateHero.bind(this), 500); // 500ms por frame
+            }
+
+            updateFeedbackText(text) {
+                this.feedbackLabel.textContent = text;
+            }
+
+            showCustomAlert(title, message) {
+                // Implementação simples de modal customizado (sem usar <dialog> para compatibilidade máxima)
+                const modalHtml = `
+                    <div id="custom-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+                        <div class="bg-white text-gray-800 p-8 rounded-xl shadow-2xl max-w-sm w-full text-center">
+                            <h3 class="text-xl font-bold mb-4">${title}</h3>
+                            <p class="mb-6">${message}</p>
+                            <button onclick="document.getElementById('custom-modal').remove()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+            }
+        }
+
+        // Inicializa o app ao carregar a janela
+        window.onload = () => {
+            app = new HeroIAApp();
+        };
+
+    </script>
+</body>
+</html>
