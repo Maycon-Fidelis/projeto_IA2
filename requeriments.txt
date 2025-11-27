@@ -4,5 +4,5 @@ numpy
 pandas
 scikit-learn
 Pillow
-gts
+gTTS
 pygame

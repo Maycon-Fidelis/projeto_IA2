@@ -1,5 +1,6 @@
-import tkinter as tk
-from tkinter import ttk, font
+import tkinter as tk # Para tk.Tk e tk.Frame
+from tkinter import ttk
+import tkinter.font as font # Para a classe font.Font
 import cv2
 import mediapipe as mp
 import pickle
@@ -9,7 +10,6 @@ import os
 import random
 import pygame 
 
-# --- CONFIGURAÇÃO CENTRAL DE EXERCÍCIOS ---
 EXERCISES = {
     "estrelas": {
         "name": "Alcançar as Estrelas",
@@ -25,15 +25,17 @@ EXERCISES = {
         "name": "Empurrar Parede",
         "model_path": "modelos/empurrar_parede.pkl",
         "logic": ['down', 'push']
+    },
+    "sentar": {
+        "name": "Sentar e Levantar (Cadeira)",
+        "model_path": "modelos/levantar_sentar.pkl",
+        "logic": ['em_pe', 'sentado']
     }
 }
-# -------------------------------------------
 
 mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
-# --- CONFIGURAÇÃO DE ÁUDIO ---
-# Define o diretório base do script para carregamento seguro
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 pygame.mixer_available = False
 SOUNDS = {}
@@ -46,7 +48,6 @@ except pygame.error as e:
 
 if pygame.mixer_available:
     try:
-        # Carrega os arquivos .mp3 usando o caminho absoluto
         SOUNDS = {
             'success': pygame.mixer.Sound(os.path.join(BASE_DIR, 'assets', 'audio', 'success.mp3')),  
             'transition': pygame.mixer.Sound(os.path.join(BASE_DIR, 'assets', 'audio', 'transition.mp3')), 
@@ -61,7 +62,6 @@ def play_sound(sound_key):
     """Toca o som se o mixer estiver disponível e o som tiver sido carregado."""
     if pygame.mixer_available and sound_key in SOUNDS:
         SOUNDS[sound_key].play()
-# -----------------------------
 
 class PoseApp(tk.Tk):
     def __init__(self, *args, **kwargs):
@@ -148,11 +148,11 @@ class MissionFrame(tk.Frame):
         self.progress_bar.pack(pady=10)
         
         # <<< NOVO: Label da Pontuação de Confiança >>>
-        self.performance_label = tk.Label(game_panel, text="Confiança: 0%", 
-                                          font=('Nunito', 16, 'bold'), 
-                                          bg='#34495e', 
-                                          fg='#f1c40f') 
-        self.performance_label.pack(pady=10)
+        #self.performance_label = tk.Label(game_panel, text="Confiança: 0%", 
+        #                                  font=('Nunito', 16, 'bold'), 
+        #                                  bg='#34495e', 
+        #                                  fg='#f1c40f') 
+        #self.performance_label.pack(pady=10)
         
         self.feedback_label = tk.Label(game_panel, text="", font=('Nunito', 14, 'italic'), bg='#34495e', fg='white', wraplength=350)
         self.feedback_label.pack(pady=15)
@@ -192,6 +192,36 @@ class MissionFrame(tk.Frame):
         self.update_frame()
         self.animate_hero()
 
+    # Adicione esta função FORA da classe MissionFrame, talvez logo abaixo do bloco de importações:
+    def calculate_angle(a, b, c):
+        """Calcula o ângulo entre 3 pontos (a, b, c), onde b é o vértice."""
+        a = np.array(a)  # Primeiro ponto (ex: Punho)
+        b = np.array(b)  # Ponto do meio (ex: Cotovelo)
+        c = np.array(c)  # Último ponto (ex: Ombro)
+
+        # Cria vetores
+        ba = a - b
+        bc = c - b
+        
+        # Produto escalar e normas (para evitar divisão por zero)
+        dot_product = np.dot(ba, bc)
+        norm_ba = np.linalg.norm(ba)
+        norm_bc = np.linalg.norm(bc)
+        
+        if norm_ba == 0 or norm_bc == 0:
+            return 0
+
+        # Calcula o cosseno e converte para ângulo (graus)
+        cosine_angle = dot_product / (norm_ba * norm_bc)
+        # Garante que o valor está dentro do domínio de arccos [-1, 1]
+        angle = np.degrees(np.arccos(np.clip(cosine_angle, -1.0, 1.0)))
+        
+        # Para conveniência, pode-se garantir que o ângulo está entre 0 e 180
+        if angle > 180.0:
+            angle = 360 - angle
+            
+        return angle
+
     def update_frame(self):
         if not self.is_mission_running: return
         ret, frame = self.cap.read()
@@ -217,8 +247,8 @@ class MissionFrame(tk.Frame):
             # ----------------------------------------------
 
             # Exibe a pontuação de confiança na tela
-            score_percent = int(confidence_score * 100)
-            self.performance_label.config(text=f"Confiança: {score_percent}%")
+            #score_percent = int(confidence_score * 100)
+            #self.performance_label.config(text=f"Confiança: {score_percent}%")
 
             # --- Lógica de Contagem e Feedback Acurado ---
             expected_stage = self.exercise_logic[self.logic_index]
@@ -282,7 +312,7 @@ class MissionFrame(tk.Frame):
     def reset_ui(self):
         self.goal_label.config(text=f"Meta: 0 / {self.MISSION_GOAL}")
         self.progress_bar['value'] = 0
-        self.performance_label.config(text="Confiança: 0%") # Reset da Confiança
+        #self.performance_label.config(text="Confiança: 0%") # Reset da Confiança
         self.update_feedback_text("Prepare-se para começar a missão!")
         for star_label in self.star_labels: star_label.config(image=self.star_empty_img)
         self.speech_bubble.pack_forget()
